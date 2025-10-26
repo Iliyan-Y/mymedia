@@ -7,15 +7,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"mymedia/common/cors"
 )
 
 const mediaDir = "../../media_library"
 
 func main() {
-    http.HandleFunc("/api/media", listMedia)
-    http.HandleFunc("/api/media/stream/", streamMedia)
-    fmt.Println("Server running on http://localhost:8080")
-    http.ListenAndServe(":8080", nil)
+    http.HandleFunc("/api/media", cors.Middleware(listMedia))
+    http.HandleFunc("/api/media/stream/", cors.Middleware(streamMedia))
+    fmt.Println("Server running on http://localhost:8081")
+    http.ListenAndServe(":8081", nil)
 }
 
 // listMedia returns a list of available files

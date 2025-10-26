@@ -6,8 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
+
+	"mymedia/common/cors"
 
 	"github.com/google/uuid"
 )
@@ -18,6 +23,7 @@ type Job struct {
 	URL      string `json:"url"`
 	Status   string `json:"status"`
 	Progress string `json:"progress"`
+	FileName string `json:"filename"`
 }
 
 // Shared job store
@@ -25,6 +31,23 @@ var (
 	jobs   = make(map[string]*Job)
 	jobsMu sync.Mutex
 )
+
+func extractFilenameFromLine(line string) string {
+	if !strings.Contains(line, "../../media_library/") {
+		return ""
+	}
+
+	// Regex to match ../../media_library/<filename>
+	re := regexp.MustCompile(`\.\./\.\./media_library/(.+?)"`)
+	matches := re.FindStringSubmatch(line)
+	if len(matches) < 2 {
+		return ""
+	}
+
+	// Clean up and return just the filename
+	filename := filepath.Base(matches[1])
+	return filename
+}
 
 // startDownloadJob launches yt-dlp in a goroutine
 func startDownloadJob(videoURL string) string {
@@ -42,13 +65,20 @@ func startDownloadJob(videoURL string) string {
 
 	go func() {
 		// yt-dlp with --newline prints each progress line
-		cmd := exec.Command("yt-dlp", "--newline", "-f", "best",  "-o", "../../media_library/%(title)s.%(ext)s", videoURL)
+		cmd := exec.Command("yt-dlp", "--newline", "-f", "best", "-o", "../../media_library/%(title)s.%(ext)s", videoURL)
 		stdout, _ := cmd.StdoutPipe()
 		_ = cmd.Start()
 
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
+
+			if name := extractFilenameFromLine(line); name != "" {
+				jobsMu.Lock()
+				job.FileName = name
+				jobsMu.Unlock()
+			}
+
 			jobsMu.Lock()
 			//println(line)
 			job.Progress = line
@@ -131,7 +161,14 @@ func sseProgressHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Fprintf(w, "data: %s\n\n", job.Progress)
+		// Build SSE payload: include filename when available
+		payload := map[string]string{"progress": job.Progress}
+		if job.FileName != "" {
+			payload["filename"] = job.FileName
+		}
+		b, _ := json.Marshal(payload)
+		fmt.Fprintf(w, "data: %s\n\n", b)
+
 		flusher.Flush()
 
 		if job.Status == "done" || job.Status == "failed" {
@@ -142,25 +179,10 @@ func sseProgressHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Access-Control-Allow-Origin", "*")
-        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-        if r.Method == "OPTIONS" {
-            w.WriteHeader(http.StatusOK)
-            return
-        }
-
-        next(w, r)
-    }
-}
-
 func main() {
-	http.HandleFunc("/download", corsMiddleware(downloadHandler))
-	http.HandleFunc("/progress", corsMiddleware(progressHandler))
-	http.HandleFunc("/progress/stream", corsMiddleware(sseProgressHandler))
+	http.HandleFunc("/download", cors.Middleware(downloadHandler))
+	http.HandleFunc("/progress", cors.Middleware(progressHandler))
+	http.HandleFunc("/progress/stream", cors.Middleware(sseProgressHandler))
 
 	fmt.Println("🚀 Server running on http://localhost:8080")
 	if err := http.ListenAndServe(":8080", nil); err != nil {

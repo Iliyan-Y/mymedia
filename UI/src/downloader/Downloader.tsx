@@ -1,13 +1,14 @@
 import { useState } from "react";
 
 const baseUrl = "http://localhost:8080";
+const baseMediaUrl = "http://localhost:8081";
 
 export default function Downloader() {
 	const [url, setUrl] = useState("");
-	//	const [jobId, setJobId] = useState("");
 	const [progress, setProgress] = useState("");
 	const [status, setStatus] = useState("");
 	const [downloading, setDownloading] = useState(false);
+	const [filename, setFilename] = useState<string | null>();
 
 	const handleDownload = async () => {
 		setDownloading(true);
@@ -19,7 +20,6 @@ export default function Downloader() {
 				`${baseUrl}/download?url=${encodeURIComponent(url)}`
 			);
 			const data: { job_id: string } = await res.json();
-			//setJobId(data.job_id);
 			listenToProgress(data.job_id);
 		} catch (err) {
 			setStatus("Error starting download");
@@ -31,9 +31,14 @@ export default function Downloader() {
 	const listenToProgress = (id: string) => {
 		const evt = new EventSource(`${baseUrl}/progress/stream?id=${id}`);
 		evt.onmessage = (e) => {
-			const text = e.data;
-			setProgress(text);
-			if (text.includes("100%") || text.includes("done")) {
+			const data = JSON.parse(e.data);
+			setProgress(data.progress);
+
+			if (data.filename && data.filename.length > 0) {
+				setFilename(data.filename);
+			}
+
+			if (data.progress.includes("done") || data.progress.includes("100%")) {
 				setStatus("✅ Download complete");
 				evt.close();
 				setDownloading(false);
@@ -49,9 +54,7 @@ export default function Downloader() {
 	};
 
 	return (
-		<div
-			style={{ maxWidth: 600, margin: "2rem auto", fontFamily: "sans-serif" }}
-		>
+		<div style={{ width: "100%" }}>
 			<h2>🎥 Video Downloader</h2>
 
 			<input
@@ -79,12 +82,22 @@ export default function Downloader() {
 						color: "#0f0",
 						padding: "1rem",
 						marginTop: "1rem",
-						height: "200px",
 						overflowY: "auto",
 					}}
 				>
 					{progress}
+					<br />
+					{filename}
 				</pre>
+			)}
+
+			{filename && (
+				<video
+					src={`${baseMediaUrl}/api/media/stream/${filename}`}
+					controls
+					autoPlay={false}
+					width="340"
+				/>
 			)}
 		</div>
 	);
