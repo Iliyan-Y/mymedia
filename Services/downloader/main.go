@@ -33,12 +33,12 @@ var (
 )
 
 func extractFilenameFromLine(line string) string {
-	if !strings.Contains(line, "../../media_library/") {
+	if !strings.Contains(line, "/media_library/") {
 		return ""
 	}
 
-	// Regex to match ../../media_library/<filename>
-	re := regexp.MustCompile(`\.\./\.\./media_library/(.+?)"`)
+	// Regex to match /media_library/<filename>
+	re := regexp.MustCompile(`/media_library/(.+?)"`)
 	matches := re.FindStringSubmatch(line)
 	if len(matches) < 2 {
 		return ""
@@ -65,26 +65,25 @@ func startDownloadJob(videoURL string) string {
 
 	go func() {
 		// yt-dlp with --newline prints each progress line
-		cmd := exec.Command("yt-dlp", "--newline", "-f", "best", "-o", "../../media_library/%(title)s.%(ext)s", videoURL)
+		cmd := exec.Command("yt-dlp", "--newline", "-f", "best", "-o", "/media_library/%(title)s.%(ext)s", videoURL)
 		stdout, _ := cmd.StdoutPipe()
 		_ = cmd.Start()
-
+	
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
-
+	
 			if name := extractFilenameFromLine(line); name != "" {
 				jobsMu.Lock()
 				job.FileName = name
 				jobsMu.Unlock()
 			}
-
+	
 			jobsMu.Lock()
-			//println(line)
 			job.Progress = line
 			jobsMu.Unlock()
 		}
-
+	
 		err := cmd.Wait()
 		jobsMu.Lock()
 		if err != nil {
