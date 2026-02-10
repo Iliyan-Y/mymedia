@@ -1,0 +1,1 @@
+cd UI && npm run build && cd ../Services && go build . && ./mymedia
