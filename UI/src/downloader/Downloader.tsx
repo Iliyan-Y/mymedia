@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-const baseUrl = "";
-const baseMediaUrl = "";
+const baseUrl = "/api";
+const baseMediaUrl = "/api";
 
 export default function Downloader() {
 	const [url, setUrl] = useState("");
