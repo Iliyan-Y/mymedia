@@ -5,7 +5,7 @@ import MediaPlayer from "./MediaPlayer/MediaPlayer";
 import Switcher from "./components/Switcher";
 
 function App() {
-	const [showDLPage, setShowDLPage] = useState(false);
+	const [showDLPage, setShowDLPage] = useState(true);
 
 	return (
 		<div

@@ -12,6 +12,8 @@ const MediaPlayer = () => {
 			.then(setFiles);
 	}, []);
 
+	if (!files || files.length === 0) return <div>NoFiles...</div>;
+
 	return (
 		<div>
 			<h3>Media Player</h3>
