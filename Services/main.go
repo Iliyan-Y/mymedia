@@ -36,7 +36,7 @@ func main() {
 		}
 	})
 
-	port := ":8080"
+	port := ":80"
 	log.Printf("server starting on http://localhost%s", port)
 	err := http.ListenAndServe(port, mux)
 	if err != nil {
