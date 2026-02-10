@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -31,6 +34,17 @@ var (
 	jobs   = make(map[string]*Job)
 	jobsMu sync.Mutex
 )
+
+const (
+	defaultMediaDir = "../media_library"
+)
+
+func getOutputDir() string {
+	if env := os.Getenv("MEDIA_LIBRARY_DIR"); env != "" {
+		return env
+	}
+	return defaultMediaDir
+}
 
 func extractFilenameFromLine(line string) string {
 	if !strings.Contains(line, "/media_library/") {
@@ -62,41 +76,91 @@ func startDownloadJob(videoURL string) string {
 	jobsMu.Lock()
 	jobs[id] = job
 	jobsMu.Unlock()
+	outDir := getOutputDir()
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		log.Printf("download job %s failed to prepare output dir %s: %v", id, outDir, err)
+		jobsMu.Lock()
+		job.Status = "failed"
+		job.Progress = fmt.Sprintf("Unable to write to %s: %v. Ensure this path is writable or set MEDIA_LIBRARY_DIR to a writable path", outDir, err)
+		jobsMu.Unlock()
+		return id
+	}
 
+	log.Printf("starting download job %s for %s", id, videoURL)
 	go func() {
 		// yt-dlp with --newline prints each progress line
-		cmd := exec.Command("yt-dlp", "--newline", "-f", "best", "-o", "/media_library/%(title)s.%(ext)s", videoURL)
-		stdout, _ := cmd.StdoutPipe()
-		_ = cmd.Start()
-
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			if name := extractFilenameFromLine(line); name != "" {
-				jobsMu.Lock()
-				job.FileName = name
-				jobsMu.Unlock()
-			}
-
+		cmd := exec.Command("yt-dlp", "--newline", "-f", "best", "-o", filepath.Join(outDir, "%(title)s.%(ext)s"), videoURL)
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			log.Printf("download job %s failed to capture stdout: %v", id, err)
 			jobsMu.Lock()
-			job.Progress = line
+			job.Status = "failed"
+			job.Progress = fmt.Sprintf("Error preparing download: %v", err)
 			jobsMu.Unlock()
+			return
+		}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			log.Printf("download job %s failed to capture stderr: %v", id, err)
+			jobsMu.Lock()
+			job.Status = "failed"
+			job.Progress = fmt.Sprintf("Error preparing download: %v", err)
+			jobsMu.Unlock()
+			return
 		}
 
-		err := cmd.Wait()
+		if err := cmd.Start(); err != nil {
+			log.Printf("download job %s failed to start: %v", id, err)
+			jobsMu.Lock()
+			job.Status = "failed"
+			job.Progress = fmt.Sprintf("Error starting download: %v", err)
+			jobsMu.Unlock()
+			return
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go scanStream(id, job, stdout, &wg)
+		go scanStream(id, job, stderr, &wg)
+		wg.Wait()
+
+		err = cmd.Wait()
 		jobsMu.Lock()
 		if err != nil {
+			log.Printf("download job %s failed: %v", id, err)
 			job.Status = "failed"
 			job.Progress = fmt.Sprintf("Error: %v", err)
 		} else {
+			log.Printf("download job %s completed", id)
 			job.Status = "done"
 			job.Progress = "Download complete!"
 		}
 		jobsMu.Unlock()
 	}()
-
+	log.Printf("download job %s started", id)
+	 
 	return id
+}
+
+func scanStream(id string, job *Job, reader io.Reader, wg *sync.WaitGroup) {
+	defer wg.Done()
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		log.Printf("download job %s: %s", id, line)
+		if name := extractFilenameFromLine(line); name != "" {
+			jobsMu.Lock()
+			job.FileName = name
+			jobsMu.Unlock()
+		}
+
+		jobsMu.Lock()
+		job.Progress = line
+		jobsMu.Unlock()
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("download job %s stream error: %v", id, err)
+	}
 }
 
 // POST or GET /download?url=<video_url>
