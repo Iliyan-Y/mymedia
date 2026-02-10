@@ -1,4 +1,4 @@
-package main
+package downloader
 
 import (
 	"bufio"
@@ -68,22 +68,22 @@ func startDownloadJob(videoURL string) string {
 		cmd := exec.Command("yt-dlp", "--newline", "-f", "best", "-o", "/media_library/%(title)s.%(ext)s", videoURL)
 		stdout, _ := cmd.StdoutPipe()
 		_ = cmd.Start()
-	
+
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
-	
+
 			if name := extractFilenameFromLine(line); name != "" {
 				jobsMu.Lock()
 				job.FileName = name
 				jobsMu.Unlock()
 			}
-	
+
 			jobsMu.Lock()
 			job.Progress = line
 			jobsMu.Unlock()
 		}
-	
+
 		err := cmd.Wait()
 		jobsMu.Lock()
 		if err != nil {
@@ -178,13 +178,8 @@ func sseProgressHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func main() {
-	http.HandleFunc("/download", cors.Middleware(downloadHandler))
-	http.HandleFunc("/progress", cors.Middleware(progressHandler))
-	http.HandleFunc("/progress/stream", cors.Middleware(sseProgressHandler))
-
-	fmt.Println("🚀 Server running on http://localhost:8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		panic(err)
-	}
+func RegisterHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/api/download", cors.Middleware(downloadHandler))
+	mux.HandleFunc("/api/progress", cors.Middleware(progressHandler))
+	mux.HandleFunc("/api/progress/stream", cors.Middleware(sseProgressHandler))
 }

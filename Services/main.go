@@ -6,12 +6,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"mymedia/downloader"
+	"mymedia/media"
 )
 
 var buildPath = "./build"
 
 func main() {
 	mux := http.NewServeMux()
+
+	media.RegisterHandlers(mux)
+	downloader.RegisterHandlers(mux)
 
 	staticFileServer := http.FileServer(http.Dir(buildPath))
 
@@ -32,7 +38,7 @@ func main() {
 
 	port := ":8080"
 	log.Printf("server starting on http://localhost%s", port)
-	err :=http.ListenAndServe(port, mux)
+	err := http.ListenAndServe(port, mux)
 	if err != nil {
 		log.Fatal(err)
 	}

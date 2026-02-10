@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-const baseUrl = "http://localhost:8080";
-const baseMediaUrl = "http://localhost:8081";
+const baseUrl = "";
+const baseMediaUrl = "";
 
 export default function Downloader() {
 	const [url, setUrl] = useState("");
@@ -17,7 +17,7 @@ export default function Downloader() {
 
 		try {
 			const res = await fetch(
-				`${baseUrl}/download?url=${encodeURIComponent(url)}`
+				`${baseUrl}/download?url=${encodeURIComponent(url)}`,
 			);
 			const data: { job_id: string } = await res.json();
 			listenToProgress(data.job_id);

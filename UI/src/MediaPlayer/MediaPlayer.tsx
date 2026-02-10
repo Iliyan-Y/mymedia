@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const baseMediaUrl = "http://localhost:8081";
+const baseMediaUrl = "";
 
 const MediaPlayer = () => {
 	const [files, setFiles] = useState([]);
